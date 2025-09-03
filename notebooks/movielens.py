@@ -61,12 +61,6 @@ def _(np, ratings):
 
 
 @app.cell
-def _(ratings):
-    ratings.head()
-    return
-
-
-@app.cell
 def _(train):
     train.head()
     return
@@ -90,7 +84,7 @@ def _(defaultdict, pd):
 def _(defaultdict, pd):
     class IdEncoder:
         """Sklearn-like encoder for userId/movieId integer mapping."""
-    
+
         def __init__(self):
             self.mappings = {}
             self.num_uniques = {}
@@ -131,6 +125,33 @@ def _(df_train):
 @app.cell
 def _(df_val):
     df_val.tail()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Embed layer""")
+    return
+
+
+@app.cell
+def _():
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as fl
+    return nn, torch
+
+
+@app.cell
+def _(nn):
+    embed = nn.Embedding(10, 3)
+    return (embed,)
+
+
+@app.cell
+def _(embed, torch):
+    b = torch.LongTensor([1,2,0,4,5,1,9])
+    embed(b)
     return
 
 
