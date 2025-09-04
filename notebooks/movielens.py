@@ -23,14 +23,20 @@ def _(mo):
 
 @app.cell
 def _():
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    import matplotlib.pyplot as plt
     import numpy as np
+
     import pandas as pd
     from pandas import DataFrame
     pd.options.mode.copy_on_write = True
 
     from pathlib import Path
     from collections import defaultdict
-    return DataFrame, Path, defaultdict, np, pd
+    return DataFrame, F, Path, defaultdict, nn, np, pd, plt, torch
 
 
 @app.cell
@@ -49,6 +55,12 @@ def _(dpath, pd):
 @app.cell
 def _(ratings):
     ratings.head()
+    return
+
+
+@app.cell
+def _(ratings):
+    ratings.shape, ratings.userId.shape
     return
 
 
@@ -142,14 +154,6 @@ def _(mo):
 
 
 @app.cell
-def _():
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    return F, nn, torch
-
-
-@app.cell
 def _(nn):
     embed = nn.Embedding(10, 3)
     return (embed,)
@@ -177,7 +181,7 @@ def _(nn):
             self.item_emb = nn.Embedding(num_items, emb_size)
             self.user_emb.weight.data.uniform_(0, 0.05)
             self.item_emb.weight.data.uniform_(0, 0.05)
-        
+
         def forward(self, u, v):
             u = self.user_emb(u)
             v = self.item_emb(v)
@@ -219,24 +223,33 @@ def _(mo):
 
 
 @app.cell
-def _(df_train, torch):
+def _(df_train, df_val):
+    df_train.shape[0], len(df_val)
+    return
+
+
+@app.cell
+def _(df_train, df_val, torch):
     from torch.utils.data import TensorDataset, DataLoader
 
+    batch_size = 1024  # or smaller/larger depending on memory
+
+    # training
     user_tensor = torch.LongTensor(df_train['userId'].values.copy())
     item_tensor = torch.LongTensor(df_train.movieId.values.copy())
     rating_tensor = torch.FloatTensor(df_train.rating.values.copy())
 
-    batch_size = 1024  # or smaller/larger depending on memory
-
     train_dataset = TensorDataset(user_tensor, item_tensor, rating_tensor)
     train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    return (train_loader,)
 
+    # validation
+    user_tensor = torch.LongTensor(df_val['userId'].values.copy())
+    item_tensor = torch.LongTensor(df_val.movieId.values.copy())
+    rating_tensor = torch.FloatTensor(df_val.rating.values.copy())
 
-@app.cell
-def _(MF, num_items, num_users):
-    model = MF(num_users, num_items)
-    return (model,)
+    val_dataset = TensorDataset(user_tensor, item_tensor, rating_tensor)
+    val_loader  = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+    return train_loader, val_loader
 
 
 @app.cell
@@ -244,29 +257,119 @@ def _(F, torch):
     def train_epochs(model, train_loader, epochs=10, lr=0.01, wd=0.0):
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
         model.train()
-    
+
         for epoch in range(epochs):
             total_loss = 0
             for users, items, ratings in train_loader:
-            
+
                 preds = model(users, items)
                 loss  = F.mse_loss(preds, ratings)
-            
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-            
+
                 total_loss += loss.item() * users.size(0)
-        
+
             avg_loss = total_loss / len(train_loader.dataset)
             print(f"Epoch {epoch+1}/{epochs}, Avg Loss: {avg_loss:.4f}")
-    return (train_epochs,)
+    return
 
 
 @app.cell
-def _(model, train_epochs, train_loader):
+def _(F, torch):
+    def train_val_epochs(model, train_loader, val_loader=None, epochs=10, lr=0.01, wd=0.0, device=None):
+        # if device is None:
+        #     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # model.to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+
+        train_losses = []
+        val_losses = []
+
+        for epoch in range(epochs):
+            # ---- TRAINING ----
+            model.train()
+            total_loss = 0
+            for users, items, ratings in train_loader:
+                # users, items, ratings = users.to(device), items.to(device), ratings.to(device)
+
+                preds = model(users, items)
+                loss  = F.mse_loss(preds, ratings)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item() * users.size(0)
+
+            avg_train_loss = total_loss / len(train_loader.dataset)
+            train_losses.append(avg_train_loss)
+
+            # ---- VALIDATION ----
+            avg_val_loss = None
+            if val_loader is not None:
+                model.eval()
+                val_loss = 0
+                with torch.no_grad():
+                    for users, items, ratings in val_loader:
+                        # users, items, ratings = users.to(device), items.to(device), ratings.to(device)
+                        preds = model(users, items)
+                        loss  = F.mse_loss(preds, ratings)
+                        val_loss += loss.item() * users.size(0)
+                avg_val_loss = val_loss / len(val_loader.dataset)
+                val_losses.append(avg_val_loss)
+
+            # ---- LOGGING ----
+            # if avg_val_loss is not None:
+            #     print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+            # else:
+            #     print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}")
+        return train_losses, val_losses
+    return (train_val_epochs,)
+
+
+@app.cell
+def _(
+    MF,
+    num_items,
+    num_users,
+    plt,
+    train_loader,
+    train_val_epochs,
+    val_loader,
+):
     # Train for 10 epochs, learning rate 0.01, no weight decay
-    train_epochs(model, train_loader, epochs=10, lr=0.01, wd=0.0)
+    model = MF(num_users, num_items)
+    epochs = 20
+    train_losses, val_losses = train_val_epochs(model, train_loader, val_loader, epochs=epochs, lr=0.01, wd=0.0)
+    # ---- Plot results ----
+    plt.figure(figsize=(7,5))
+    plt.plot(range(1, epochs+1), train_losses, label="Train MSE")
+    plt.plot(range(1, epochs+1), val_losses, label="Val MSE")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training vs Validation Loss")
+    plt.legend()
+    plt.show()
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    # train_epochs(model, train_loader, epochs=10, lr=0.1, wd=0.0)
+    return
+
+
+@app.cell
+def _():
+    # train_epochs(model, train_loader, epochs=15, lr=0.01, wd=0.0)
     return
 
 
