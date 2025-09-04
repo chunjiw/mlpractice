@@ -353,23 +353,62 @@ def _(
     plt.title("Training vs Validation Loss")
     plt.legend()
     plt.show()
+    return (model,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Matrix factorization with bias""")
     return
 
 
 @app.cell
-def _():
-    return
+def _(nn):
+    class MF_bias(nn.Module):
+        def __init__(self, num_users, num_items, emb_size=100):
+            super(MF_bias, self).__init__()
+            self.user_emb = nn.Embedding(num_users, emb_size)
+            self.user_bias = nn.Embedding(num_users, 1)
+            self.item_emb = nn.Embedding(num_items, emb_size)
+            self.item_bias = nn.Embedding(num_items, 1)
+            self.user_emb.weight.data.uniform_(0,0.05)
+            self.item_emb.weight.data.uniform_(0,0.05)
+            self.user_bias.weight.data.uniform_(-0.01,0.01)
+            self.item_bias.weight.data.uniform_(-0.01,0.01)
+        
+        def forward(self, u, v):
+            U = self.user_emb(u)
+            V = self.item_emb(v)
+            b_u = self.user_bias(u).squeeze()
+            b_v = self.item_bias(v).squeeze()
+            return (U*V).sum(1) +  b_u  + b_v
+    return (MF_bias,)
 
 
 @app.cell
-def _():
-    # train_epochs(model, train_loader, epochs=10, lr=0.1, wd=0.0)
-    return
-
-
-@app.cell
-def _():
-    # train_epochs(model, train_loader, epochs=15, lr=0.01, wd=0.0)
+def _(
+    MF_bias,
+    model,
+    num_items,
+    num_users,
+    plt,
+    train_loader,
+    train_val_epochs,
+    val_loader,
+):
+    # Train for 10 epochs, learning rate 0.01, no weight decay
+    _model = MF_bias(num_users, num_items)
+    _epochs = 10
+    _train_losses, _val_losses = train_val_epochs(model, train_loader, val_loader, epochs=_epochs, lr=0.01, wd=1e-5)
+    # ---- Plot results ----
+    plt.figure(figsize=(7,5))
+    plt.plot(range(1, _epochs+1), _train_losses, label="Train MSE")
+    plt.plot(range(1, _epochs+1), _val_losses, label="Val MSE")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training vs Validation Loss")
+    plt.legend()
+    plt.show()
     return
 
 
